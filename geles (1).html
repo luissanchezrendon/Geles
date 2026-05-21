@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Geles</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Bricolage+Grotesque:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js';
+import { getDatabase, ref, onValue, set, remove, push, get }
+  from 'https://www.gstatic.com/firebasejs/12.13.0/firebase-database.js';
+
+// 🔧 PEGA AQUÍ TU CONFIGURACIÓN DE FIREBASE
+const firebaseConfig = {
+  apiKey:            "AIzaSyCdySQS3M_4_EYhoOrn14TzMb_MICn0R1I",
+  authDomain:        "geles-5ed3b.firebaseapp.com",
+  databaseURL:       "https://geles-5ed3b-default-rtdb.firebaseio.com",
+  projectId:         "geles-5ed3b",
+  storageBucket:     "geles-5ed3b.firebasestorage.app",
+  messagingSenderId: "954384112684",
+  appId:             "1:954384112684:web:b830a1d6d7c4d46c2e4589"
+};
+
+const app = initializeApp(firebaseConfig);
+const db  = getDatabase(app);
+
+// ─── helpers Firebase ────────────────────────────────────
+function dbSet(path, val){ return set(ref(db, path), val); }
+function dbRemove(path){   return remove(ref(db, path)); }
+function dbPush(path, val){ return push(ref(db, path), val); }
+
+// Exponer al scope global para que el resto del JS lo use
+window._db   = db;
+window._ref  = ref;
+window._dbSet    = dbSet;
+window._dbRemove = dbRemove;
+window._dbPush   = dbPush;
+
+// ─── Escuchar cambios en tiempo real ────────────────────
+function listen(path, cb){
+  onValue(ref(db, path), snap => cb(snap.val()));
+}
+
+// Productos
+listen('productos', data => {
+  window._productos = data
+    ? Object.entries(data).map(([fbKey,v])=>({...v, fbKey}))
+    : [];
+  if(window._appReady){ renderInventario(); renderVentas(); }
+});
+
+// Ventas
+listen('ventas', data => {
+  window._ventas = data
+    ? Object.entries(data).map(([fbKey,v])=>({...v, fbKey}))
+    : [];
+  if(window._appReady){ renderVentas(); renderInvMetrics(); }
+});
+
+window._appReady = false;
+
+// Cuando ambos lleguen por primera vez, arrancar la app
+async function waitForInitialData(){
+  // Pequeño delay para que los listeners tengan datos
+  await new Promise(r => setTimeout(r, 800));
+  window._appReady = true;
+  setLoading(false);
+  renderInventario();
+}
+waitForInitialData();
+
+</script>
+<style>
+:root{
+  --bg:#f7f5f0;--surface:#fff;--surface2:#f0ede6;--border:#e0dbd0;--border2:#ccc7ba;
+  --text:#18170f;--text2:#6b6757;--text3:#a09c8e;
+  --accent:#1e4d35;--accent-light:#e8f2ec;--accent-mid:#2e7a52;
+  --green-bg:#d6f0df;--green-text:#1a5e30;--green-border:#7ecfa0;
+  --yellow-bg:#fff3c4;--yellow-text:#7a5800;--yellow-border:#f0c842;
+  --blue-bg:#dbeafe;--blue-text:#1e3a8a;
+  --red-bg:#ffe4e4;--red-text:#991b1b;--red-border:#f87171;
+  --gray-bg:#f0ede6;--gray-text:#6b6757;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Bricolage Grotesque',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* LOADING */
+#loading-screen{position:fixed;inset:0;background:var(--accent);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:999;gap:16px;}
+#loading-screen.hidden{display:none;}
+.loader{width:36px;height:36px;border:3px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-screen p{color:rgba(255,255,255,.8);font-size:.9rem;font-family:'DM Mono',monospace;}
+
+/* CONFIG BANNER */
+#config-banner{display:none;background:#fff3c4;border-bottom:2px solid #f0c842;padding:.75rem 2rem;font-size:.82rem;color:#7a5800;font-family:'DM Mono',monospace;align-items:center;gap:10px;}
+#config-banner.show{display:flex;}
+
+/* SYNC INDICATOR */
+.sync-dot{width:8px;height:8px;border-radius:50%;background:#7ecfa0;display:inline-block;margin-right:6px;animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.sync-dot.error{background:var(--red-text);animation:none;}
+
+nav{background:var(--accent);display:flex;align-items:stretch;padding:0 2rem;gap:0;}
+.nav-brand{color:#fff;font-size:1.05rem;font-weight:700;display:flex;align-items:center;gap:8px;padding:1rem 0;margin-right:2rem;letter-spacing:-.02em;}
+.nav-tabs{display:flex;}
+.nav-tab{color:rgba(255,255,255,.6);font-size:.85rem;font-weight:500;padding:0 1.25rem;display:flex;align-items:center;gap:7px;cursor:pointer;border-bottom:3px solid transparent;border:none;background:transparent;font-family:'Bricolage Grotesque',sans-serif;transition:color .15s;}
+.nav-tab:hover{color:rgba(255,255,255,.9);}
+.nav-tab.active{color:#fff;border-bottom:3px solid #7ecfa0;}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.btn-export{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;padding:6px 14px;border-radius:8px;font-size:.78rem;font-family:'Bricolage Grotesque',sans-serif;font-weight:500;cursor:pointer;}
+.btn-export:hover{background:rgba(255,255,255,.22);}
+.sync-info{color:rgba(255,255,255,.7);font-size:.72rem;font-family:'DM Mono',monospace;display:flex;align-items:center;}
+
+.page{display:none;}.page.active{display:block;}
+.metrics-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;padding:1.5rem 2rem 0;}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;}
+.metric-label{font-size:.68rem;font-family:'DM Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px;}
+.metric-val{font-size:1.75rem;font-weight:700;letter-spacing:-.03em;}
+.metric-val.green{color:var(--green-text);}.metric-val.yellow{color:var(--yellow-text);}
+.metric-val.blue{color:var(--blue-text);}.metric-val.red{color:var(--red-text);}.metric-val.gray{color:var(--text2);}
+.metric-sub{font-size:.72rem;color:var(--text3);margin-top:3px;font-family:'DM Mono',monospace;}
+
+.toolbar{padding:1.25rem 2rem .75rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.section-title{font-size:1.1rem;font-weight:700;padding:1.5rem 2rem 0;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
+.section-title span{font-weight:400;font-size:.8rem;color:var(--text3);font-family:'DM Mono',monospace;}
+.btn-primary{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:.82rem;font-weight:600;font-family:'Bricolage Grotesque',sans-serif;cursor:pointer;}
+.btn-primary:hover{opacity:.85;}
+.btn-ghost{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--text2);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;font-size:.82rem;font-family:'Bricolage Grotesque',sans-serif;cursor:pointer;}
+.btn-ghost:hover{background:var(--surface2);}
+.filter-pill{padding:5px 13px;border-radius:20px;border:1px solid var(--border);background:var(--surface);font-size:.76rem;font-family:'Bricolage Grotesque',sans-serif;color:var(--text2);cursor:pointer;transition:all .15s;}
+.filter-pill:hover{border-color:var(--accent-mid);color:var(--accent);}
+.filter-pill.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;}
+.search-box{margin-left:auto;position:relative;}
+.search-box input{font-family:'DM Mono',monospace;font-size:.78rem;padding:7px 12px 7px 32px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);width:190px;outline:none;}
+.search-box input:focus{border-color:var(--accent-mid);}
+.search-box svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text3);pointer-events:none;}
+
+.tbl-wrap{margin:0 2rem 2rem;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;}
+table{width:100%;border-collapse:collapse;font-size:.82rem;}
+thead th{background:var(--surface2);color:var(--text3);font-family:'DM Mono',monospace;font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;font-weight:400;padding:9px 14px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:10px 14px;border-bottom:1px solid #f0ede6;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:#faf8f4;}
+th.r,td.r{text-align:right;}
+.tbl-footer td{font-family:'DM Mono',monospace;font-size:.74rem;font-weight:500;background:var(--surface2);border-top:1px solid var(--border);border-bottom:none;color:var(--text);}
+
+tr.stock-low td{background:#fff8f8!important;}tr.stock-low:hover td{background:#fff0f0!important;}
+.stock-num{font-family:'DM Mono',monospace;font-weight:500;}
+.stock-num.ok{color:var(--green-text);}.stock-num.low{color:var(--red-text);font-weight:700;}.stock-num.zero{color:var(--red-text);font-weight:700;}
+.low-badge{display:inline-block;font-size:.65rem;background:var(--red-bg);color:var(--red-text);border:1px solid var(--red-border);border-radius:20px;padding:1px 7px;margin-left:5px;font-family:'DM Mono',monospace;vertical-align:middle;}
+
+tr.v-solicitado td{background:#f0f4ff!important;}tr.v-solicitado:hover td{background:#e4eaff!important;}
+tr.v-entregado td{background:#fffdf0!important;}tr.v-entregado:hover td{background:#fffbe0!important;}
+tr.v-pagado-nd td{background:#f3eeff!important;}tr.v-pagado-nd:hover td{background:#ebe0ff!important;}
+tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background:#e2f7ea!important;}
+
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:.7rem;font-family:'DM Mono',monospace;font-weight:500;padding:3px 9px;border-radius:20px;}
+.b-stock{background:var(--blue-bg);color:var(--blue-text);}
+.b-low{background:var(--red-bg);color:var(--red-text);border:1px solid var(--red-border);}
+.b-solicitado{background:#e0e8ff;color:#2b3fa0;border:1px solid #a5b4fc;}
+.b-entregado{background:#fff3c4;color:#7a5800;border:1px solid #f0c842;}
+.b-pagado-nd{background:#ede9ff;color:#5b21b6;border:1px solid #c4b5fd;}
+.b-completo{background:#d6f0df;color:#1a5e30;border:1px solid #7ecfa0;}
+
+.actions{display:flex;gap:3px;}
+.ic{background:transparent;border:none;border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);transition:background .12s,color .12s;flex-shrink:0;}
+.ic:hover{background:var(--surface2);color:var(--text);}
+.ic.del:hover{background:var(--red-bg);color:var(--red-text);}
+.ic.dup:hover{background:var(--blue-bg);color:var(--blue-text);}
+
+.overlay{display:none;position:fixed;inset:0;background:rgba(15,13,8,.5);z-index:300;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto;}
+.overlay.open{display:flex;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:2rem;width:520px;max-width:100%;margin:auto;}
+.modal h2{font-size:1.1rem;font-weight:700;margin-bottom:1.5rem;letter-spacing:-.01em;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;}
+.full{grid-column:1/-1;}
+.form-row label{display:block;font-family:'DM Mono',monospace;font-size:.67rem;color:var(--text3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:5px;}
+.form-row input,.form-row select{width:100%;font-family:'Bricolage Grotesque',sans-serif;font-size:.84rem;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);outline:none;}
+.form-row input:focus,.form-row select:focus{border-color:var(--accent-mid);}
+.form-hint{font-size:.7rem;color:var(--text3);margin-top:4px;font-family:'DM Mono',monospace;}
+.modal-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:1.5rem;}
+.divider{height:1px;background:var(--border);margin:1rem 0;}
+.empty-state{text-align:center;padding:3rem 1rem;color:var(--text3);font-family:'DM Mono',monospace;font-size:.8rem;}
+.profit-cell{font-family:'DM Mono',monospace;font-size:.78rem;}
+.profit-pos{color:var(--green-text);font-weight:500;}.profit-neg{color:var(--red-text);}
+
+.confirm-modal{width:360px;text-align:center;}
+.confirm-modal p{color:var(--text2);font-size:.9rem;margin-bottom:1.5rem;line-height:1.6;}
+.confirm-modal .modal-foot{justify-content:center;}
+.btn-danger{display:inline-flex;align-items:center;gap:6px;background:var(--red-text);color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:.82rem;font-weight:600;font-family:'Bricolage Grotesque',sans-serif;cursor:pointer;}
+.btn-danger:hover{opacity:.85;}
+
+.lineas-wrap{margin-bottom:1rem;}
+.linea-item{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;margin-bottom:8px;}
+.linea-item .linea-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;}
+.linea-item .linea-nombre{font-weight:600;font-size:.85rem;}
+.linea-item .linea-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+.linea-item .linea-fields select,.linea-item .linea-fields input{font-size:.8rem;padding:6px 8px;}
+.linea-hint{font-size:.68rem;color:var(--text3);font-family:'DM Mono',monospace;margin-top:3px;}
+.btn-add-linea{display:flex;align-items:center;gap:6px;background:var(--accent-light);color:var(--accent);border:1px dashed var(--accent-mid);border-radius:8px;padding:7px 14px;font-size:.8rem;font-weight:600;font-family:'Bricolage Grotesque',sans-serif;cursor:pointer;width:100%;justify-content:center;}
+.btn-add-linea:hover{background:#d5eadc;}
+.total-venta-grande{font-size:1.4rem;font-weight:700;color:var(--accent);font-family:'DM Mono',monospace;padding:4px 0;}
+.ic-remove-linea{background:transparent;border:none;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;display:flex;align-items:center;}
+.ic-remove-linea:hover{color:var(--red-text);}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading-screen">
+  <div class="loader"></div>
+  <p>Conectando con la base de datos…</p>
+</div>
+
+<!-- BANNER si no está configurado Firebase -->
+<div id="config-banner" class="show">
+  ⚙️ Falta configurar Firebase — sigue las instrucciones del archivo <strong>INSTRUCCIONES.txt</strong> para activar la sincronización en tiempo real.
+</div>
+
+<nav>
+  <div class="nav-brand">🏃 Geles</div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('inventario',this)">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Inventario
+    </button>
+    <button class="nav-tab" onclick="showPage('ventas',this)">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>Ventas
+    </button>
+  </div>
+  <div class="nav-right">
+    <span class="sync-info"><span class="sync-dot" id="sync-dot"></span>En vivo</span>
+    <button class="btn-export" onclick="exportExcel()">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4M3 17v2a2 2 0 002 2h14a2 2 0 002-2v-2"/></svg>Excel
+    </button>
+  </div>
+</nav>
+
+<!-- INVENTARIO -->
+<div class="page active" id="page-inventario">
+  <div class="metrics-bar" id="inv-metrics"></div>
+  <div class="section-title">Catálogo de geles <span id="inv-count"></span></div>
+  <div class="toolbar">
+    <button class="filter-pill active" onclick="invFilter('todos',this)">Todos</button>
+    <button class="filter-pill" onclick="invFilter('ok',this)">Stock OK</button>
+    <button class="filter-pill" onclick="invFilter('low',this)">Stock bajo</button>
+    <button class="filter-pill" onclick="invFilter('agotado',this)">Agotados</button>
+    <div class="search-box">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="inv-search" type="text" placeholder="Buscar…" oninput="renderInventario()"/>
+    </div>
+    <button class="btn-primary" onclick="openInvModal()" style="margin-left:8px">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Agregar gel
+    </button>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th style="width:22%">Nombre / marca</th><th style="width:13%">Sabor</th>
+        <th class="r" style="width:8%">Stock</th><th class="r" style="width:10%">Costo</th>
+        <th class="r" style="width:9%">Envío</th><th class="r" style="width:10%">Precio</th>
+        <th class="r" style="width:10%">Margen</th><th style="width:9%">Estado</th>
+        <th style="width:9%">Acciones</th>
+      </tr></thead>
+      <tbody id="inv-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- VENTAS -->
+<div class="page" id="page-ventas">
+  <div class="metrics-bar" id="ven-metrics"></div>
+  <div class="section-title">Registro de ventas <span id="ven-count"></span></div>
+  <div class="toolbar">
+    <button class="filter-pill active" onclick="venFilter('todos',this)">Todas</button>
+    <button class="filter-pill" onclick="venFilter('solicitado',this)">Solicitado</button>
+    <button class="filter-pill" onclick="venFilter('entregado',this)">Entregado sin pago</button>
+    <button class="filter-pill" onclick="venFilter('pagado_nd',this)">Pagado sin entregar</button>
+    <button class="filter-pill" onclick="venFilter('completo',this)">Pagado y entregado</button>
+    <div class="search-box">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="ven-search" type="text" placeholder="Buscar…" oninput="renderVentas()"/>
+    </div>
+    <button class="btn-primary" onclick="openVentaModal()" style="margin-left:8px">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nueva venta
+    </button>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr>
+        <th style="width:7%">Fecha</th><th style="width:7%">#</th>
+        <th style="width:22%">Productos</th>
+        <th class="r" style="width:10%">Total</th>
+        <th style="width:13%">Cliente</th><th style="width:12%">Estado</th>
+        <th style="width:13%">Notas</th><th style="width:8%">Acciones</th>
+      </tr></thead>
+      <tbody id="ven-tbody"></tbody>
+    </table>
+  </div>
+  <div style="padding:0 2rem 2rem;display:flex;gap:16px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#e0e8ff;border:1px solid #a5b4fc;border-radius:3px;display:inline-block"></span>Solicitado</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#fff3c4;border:1px solid #f0c842;border-radius:3px;display:inline-block"></span>Entregado sin pago</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#ede9ff;border:1px solid #c4b5fd;border-radius:3px;display:inline-block"></span>Pagado sin entregar</div>
+    <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#d6f0df;border:1px solid #7ecfa0;border-radius:3px;display:inline-block"></span>Pagado y entregado</div>
+  </div>
+</div>
+
+<!-- MODAL INVENTARIO -->
+<div class="overlay" id="inv-overlay" onclick="if(event.target===this)closeInvModal()">
+  <div class="modal">
+    <h2 id="inv-modal-title">Agregar gel</h2>
+    <div class="form-grid">
+      <div class="form-row full"><label>Nombre / marca *</label><input id="im-nombre" type="text" placeholder="ej. GU Energy, Maurten 100…"/></div>
+      <div class="form-row"><label>Sabor</label><input id="im-sabor" type="text" placeholder="ej. Vainilla, Fresa…"/></div>
+      <div class="form-row"><label>Stock inicial</label><input id="im-stock" type="number" min="0" value="0"/></div>
+      <div class="form-row"><label>Costo unitario (MXN)</label><input id="im-costo" type="number" min="0" step="0.5" placeholder="0.00"/></div>
+      <div class="form-row"><label>Costo de envío unit. (MXN)</label><input id="im-envio" type="number" min="0" step="0.5" placeholder="0.00"/></div>
+      <div class="form-row"><label>Precio de venta (MXN)</label><input id="im-precio" type="number" min="0" step="0.5" placeholder="0.00"/></div>
+      <div class="form-row"><label>Alerta stock bajo</label><input id="im-alerta" type="number" min="1" value="5"/></div>
+      <div class="form-row full"><label>Notas</label><input id="im-notas" type="text" placeholder="ej. Proveedor, lote…"/></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeInvModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveInvItem()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL VENTA -->
+<div class="overlay" id="ven-overlay" onclick="if(event.target===this)closeVentaModal()">
+  <div class="modal">
+    <h2 id="ven-modal-title">Registrar venta</h2>
+    <div id="lineas-wrap" class="lineas-wrap"></div>
+    <button class="btn-add-linea" onclick="addLinea()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Agregar otro gel
+    </button>
+    <div class="divider" style="margin-top:1rem"></div>
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1rem;">
+      <span style="font-size:.8rem;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.08em">Total</span>
+      <div class="total-venta-grande" id="vm-total-grande">$0</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row full"><label>Cliente *</label><input id="vm-cliente" type="text" placeholder="Nombre o @usuario…"/></div>
+      <div class="form-row"><label>Fecha</label><input id="vm-fecha" type="date"/></div>
+      <div class="form-row"><label>Estado</label>
+        <select id="vm-estado">
+          <option value="solicitado">Solicitado</option>
+          <option value="entregado">Entregado sin pago</option>
+          <option value="pagado_nd">Pagado sin entregar</option>
+          <option value="completo">Pagado y entregado</option>
+        </select>
+      </div>
+      <div class="form-row full"><label>Notas</label><input id="vm-notas" type="text" placeholder="ej. Pago por transferencia…"/></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeVentaModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveVenta()">Guardar venta</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRMACIÓN -->
+<div class="overlay" id="confirm-overlay" onclick="if(event.target===this)closeConfirm()">
+  <div class="modal confirm-modal">
+    <h2 id="confirm-title">Confirmar</h2>
+    <p id="confirm-msg"></p>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeConfirm()">Cancelar</button>
+      <button class="btn-danger" onclick="runConfirm()">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+window._productos = [];
+window._ventas    = [];
+
+// Alias cortos
+function productos(){ return window._productos; }
+function ventas()   { return window._ventas; }
+
+const fmt   = n => '$'+Math.round(Number(n)).toLocaleString('es-MX');
+const fmtD  = s => { if(!s) return '—'; const[,m,d]=s.split('-'); const M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return `${d} ${M[+m-1]}`; };
+const today = () => new Date().toISOString().split('T')[0];
+const getProd     = id  => productos().find(p => p.id === id);
+const ventaTotal  = v   => v.lineas.reduce((a,l) => a+l.qty*l.precio, 0);
+const ventaGeles  = v   => v.lineas.reduce((a,l) => a+l.qty, 0);
+
+let invFilterState='todos', venFilterState='todos';
+let editProdId=null, editVentaId=null;
+let lineasModal=[], lineaUid=0;
+
+function setLoading(on){
+  document.getElementById('loading-screen').classList.toggle('hidden', !on);
+}
+
+// Detectar si Firebase está configurado
+function firebaseConfigurado(){
+  try {
+    const el = document.querySelector('script[type="module"]');
+    return el && !el.textContent.includes('PEGA_TU_apiKey');
+  } catch(e){ return false; }
+}
+if(firebaseConfigurado()){
+  document.getElementById('config-banner').classList.remove('show');
+} else {
+  setLoading(false);
+  document.getElementById('sync-dot').classList.add('error');
+  window._appReady = true;
+}
+
+function fbSaveProd(prod){
+  const {fbKey, ...data} = prod;
+  if(fbKey) return window._dbSet('productos/'+fbKey, {...data});
+  return window._dbPush('productos', prod).then(r => r.key);
+}
+function fbDeleteProd(fbKey){ return window._dbRemove('productos/'+fbKey); }
+
+function fbSaveVenta(venta){
+  const {fbKey, ...data} = venta;
+  if(fbKey) return window._dbSet('ventas/'+fbKey, {...data});
+  return window._dbPush('ventas', data).then(r => r.key);
+}
+function fbDeleteVenta(fbKey){ return window._dbRemove('ventas/'+fbKey); }
+
+let _confirmCb=null;
+function showConfirm(title,msg,cb){ document.getElementById('confirm-title').textContent=title; document.getElementById('confirm-msg').textContent=msg; _confirmCb=cb; document.getElementById('confirm-overlay').classList.add('open'); }
+function closeConfirm(){ document.getElementById('confirm-overlay').classList.remove('open'); _confirmCb=null; }
+function runConfirm(){ const cb=_confirmCb; closeConfirm(); if(cb) cb(); }
+
+function showPage(name,btn){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
+  document.getElementById('page-'+name).classList.add('active');
+  btn.classList.add('active');
+  name==='inventario' ? renderInventario() : renderVentas();
+}
+
+function renderInvMetrics(){
+  const prods = productos();
+  const unds  = prods.reduce((a,p)=>a+p.stock,0);
+  const vC    = prods.reduce((a,p)=>a+p.stock*(p.costo+p.envio),0);
+  const vV    = prods.reduce((a,p)=>a+p.stock*p.precio,0);
+  const bajos = prods.filter(p=>p.stock>0&&p.stock<=p.alerta).length;
+  const agot  = prods.filter(p=>p.stock===0).length;
+  document.getElementById('inv-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Productos</div><div class="metric-val gray">${prods.length}</div></div>
+    <div class="metric"><div class="metric-label">En stock</div><div class="metric-val blue">${unds}</div></div>
+    <div class="metric"><div class="metric-label">Valor en costo</div><div class="metric-val gray">${fmt(vC)}</div><div class="metric-sub">costo + envío</div></div>
+    <div class="metric"><div class="metric-label">Valor a precio venta</div><div class="metric-val green">${fmt(vV)}</div></div>
+    <div class="metric"><div class="metric-label">Bajo / agotado</div><div class="metric-val red">${bajos+agot}</div><div class="metric-sub">${bajos} bajo · ${agot} agotado</div></div>`;
+}
+
+function getInvFiltered(){
+  const q=document.getElementById('inv-search').value.toLowerCase().trim();
+  return productos().filter(p=>{
+    if(invFilterState==='ok'    && !(p.stock>p.alerta)) return false;
+    if(invFilterState==='low'   && !(p.stock>0&&p.stock<=p.alerta)) return false;
+    if(invFilterState==='agotado'&&p.stock!==0) return false;
+    if(q && !`${p.nombre} ${p.sabor} ${p.notas}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function renderInventario(){
+  renderInvMetrics();
+  const list=getInvFiltered();
+  document.getElementById('inv-count').textContent=`${list.length} producto${list.length!==1?'s':''}`;
+  const tbody=document.getElementById('inv-tbody');
+  if(!list.length){tbody.innerHTML=`<tr><td colspan="9" class="empty-state">No hay productos aquí.</td></tr>`;return;}
+  let tS=0,tC=0,tP=0;
+  const rows=list.map(p=>{
+    const low=p.stock>0&&p.stock<=p.alerta, zero=p.stock===0;
+    const margen=p.precio-p.costo-p.envio;
+    const margenPct=p.precio>0?Math.round(margen/p.precio*100):0;
+    const badge=zero?'<span class="badge b-low">Agotado</span>':low?'<span class="badge b-low">⚠ Bajo</span>':'<span class="badge b-stock">OK</span>';
+    const lowB=(low||zero)?'<span class="low-badge">¡Resurtir!</span>':'';
+    tS+=p.stock; tC+=p.stock*(p.costo+p.envio); tP+=p.stock*p.precio;
+    return `<tr class="${(low||zero)?'stock-low':''}">
+      <td style="font-weight:600">${p.nombre}${lowB}</td>
+      <td style="color:var(--text2)">${p.sabor||'—'}</td>
+      <td class="r"><span class="stock-num ${zero?'zero':low?'low':'ok'}">${p.stock}</span></td>
+      <td class="r" style="font-family:'DM Mono',monospace">${fmt(p.costo)}</td>
+      <td class="r" style="font-family:'DM Mono',monospace">${fmt(p.envio)}</td>
+      <td class="r" style="font-family:'DM Mono',monospace;font-weight:600">${fmt(p.precio)}</td>
+      <td class="r profit-cell"><span class="${margen>=0?'profit-pos':'profit-neg'}">${fmt(margen)} <span style="font-size:.65rem">(${margenPct}%)</span></span></td>
+      <td>${badge}</td>
+      <td><div class="actions">
+        <button class="ic" title="Editar" onclick="editInvItem('${p.fbKey}')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="ic dup" title="Duplicar" onclick="dupProd('${p.fbKey}')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+        <button class="ic del" title="Eliminar" onclick="deleteProd('${p.fbKey}')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  tbody.innerHTML=rows+`<tr class="tbl-footer">
+    <td colspan="2" style="text-align:right;padding-right:14px">TOTALES</td>
+    <td class="r">${tS}</td><td class="r">${fmt(tC)}</td><td></td>
+    <td class="r">${fmt(tP)}</td><td colspan="3"></td></tr>`;
+}
+
+function invFilter(f,btn){
+  invFilterState=f;
+  document.querySelectorAll('#page-inventario .filter-pill').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); renderInventario();
+}
+
+function openInvModal(reset=true){
+  if(reset){
+    editProdId=null;
+    document.getElementById('inv-modal-title').textContent='Agregar gel';
+    ['nombre','sabor','notas'].forEach(f=>document.getElementById('im-'+f).value='');
+    document.getElementById('im-stock').value=0;
+    document.getElementById('im-costo').value='';
+    document.getElementById('im-envio').value='';
+    document.getElementById('im-precio').value='';
+    document.getElementById('im-alerta').value=5;
+  }
+  document.getElementById('inv-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('im-nombre').focus(),50);
+}
+function closeInvModal(){ editProdId=null; document.getElementById('inv-overlay').classList.remove('open'); }
+
+function editInvItem(fbKey){
+  const p=productos().find(x=>x.fbKey===fbKey);
+  if(!p) return;
+  editProdId=fbKey;
+  document.getElementById('inv-modal-title').textContent='Editar gel';
+  document.getElementById('im-nombre').value=p.nombre;
+  document.getElementById('im-sabor').value=p.sabor;
+  document.getElementById('im-stock').value=p.stock;
+  document.getElementById('im-costo').value=p.costo;
+  document.getElementById('im-envio').value=p.envio;
+  document.getElementById('im-precio').value=p.precio;
+  document.getElementById('im-alerta').value=p.alerta;
+  document.getElementById('im-notas').value=p.notas;
+  openInvModal(false);
+}
+
+function dupProd(fbKey){
+  const p=productos().find(x=>x.fbKey===fbKey);
+  if(!p) return;
+  const copia={id:Date.now(), nombre:p.nombre+' (copia)', sabor:p.sabor, stock:0, costo:p.costo, envio:p.envio, precio:p.precio, alerta:p.alerta, notas:p.notas};
+  fbSaveProd(copia).then(newKey => {
+    editInvItem(newKey);
+  });
+}
+
+function saveInvItem(){
+  const nombre=document.getElementById('im-nombre').value.trim();
+  if(!nombre){ document.getElementById('im-nombre').focus(); return; }
+  const data={
+    id: editProdId ? (productos().find(x=>x.fbKey===editProdId)||{}).id||Date.now() : Date.now(),
+    nombre, sabor:document.getElementById('im-sabor').value.trim(),
+    stock:Math.max(0,parseInt(document.getElementById('im-stock').value)||0),
+    costo:parseFloat(document.getElementById('im-costo').value)||0,
+    envio:parseFloat(document.getElementById('im-envio').value)||0,
+    precio:parseFloat(document.getElementById('im-precio').value)||0,
+    alerta:Math.max(1,parseInt(document.getElementById('im-alerta').value)||5),
+    notas:document.getElementById('im-notas').value.trim(),
+  };
+  if(editProdId) data.fbKey=editProdId;
+  fbSaveProd(data);
+  closeInvModal();
+}
+
+function deleteProd(fbKey){
+  const enUso=ventas().some(v=>v.lineas.some(l=>l.prodId===(productos().find(x=>x.fbKey===fbKey)||{}).id));
+  showConfirm(
+    'Eliminar producto',
+    enUso?'Este gel tiene ventas registradas. ¿Seguro que quieres eliminarlo?':'¿Eliminar este producto del catálogo?',
+    ()=>fbDeleteProd(fbKey)
+  );
+}
+
+function renderVenMetrics(){
+  const vents=ventas();
+  const geles=vents.reduce((a,v)=>a+ventaGeles(v),0);
+  const monto=vents.reduce((a,v)=>a+ventaTotal(v),0);
+  const cobrado=vents.filter(v=>v.estado==='completo'||v.estado==='pagado_nd').reduce((a,v)=>a+ventaTotal(v),0);
+  const porCobrar=vents.filter(v=>v.estado==='solicitado'||v.estado==='entregado').reduce((a,v)=>a+ventaTotal(v),0);
+  document.getElementById('ven-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Total ventas</div><div class="metric-val blue">${vents.length}</div><div class="metric-sub">${geles} geles</div></div>
+    <div class="metric"><div class="metric-label">Monto total</div><div class="metric-val gray">${fmt(monto)}</div></div>
+    <div class="metric"><div class="metric-label">Ya cobrado</div><div class="metric-val green">${fmt(cobrado)}</div></div>
+    <div class="metric"><div class="metric-label">Por cobrar</div><div class="metric-val yellow">${fmt(porCobrar)}</div><div class="metric-sub">solicitado + entregado</div></div>`;
+}
+
+const BADGE_MAP={
+  solicitado:['v-solicitado','b-solicitado','Solicitado'],
+  entregado: ['v-entregado', 'b-entregado', 'Entregado sin pago'],
+  pagado_nd: ['v-pagado-nd', 'b-pagado-nd', 'Pagado sin entregar'],
+  completo:  ['v-completo',  'b-completo',  '✓ Pagado y entregado'],
+};
+
+function getVenFiltered(){
+  const q=document.getElementById('ven-search').value.toLowerCase().trim();
+  return ventas().filter(v=>{
+    if(venFilterState!=='todos'&&v.estado!==venFilterState) return false;
+    const nombres=v.lineas.map(l=>{const p=getProd(l.prodId);return p?p.nombre:'';}).join(' ');
+    if(q&&!`${nombres} ${v.cliente} ${v.notas}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+}
+
+function renderVentas(){
+  renderVenMetrics();
+  const list=getVenFiltered();
+  document.getElementById('ven-count').textContent=`${list.length} venta${list.length!==1?'s':''}`;
+  const tbody=document.getElementById('ven-tbody');
+  if(!list.length){tbody.innerHTML=`<tr><td colspan="8" class="empty-state">No hay ventas aquí.</td></tr>`;return;}
+  let tG=0,tM=0;
+  const rows=list.map(v=>{
+    const total=ventaTotal(v); tG+=ventaGeles(v); tM+=total;
+    const [rowCls,bCls,bLabel]=BADGE_MAP[v.estado]||['','b-solicitado',v.estado];
+    const prodR=v.lineas.map(l=>{const p=getProd(l.prodId);return p?`${l.qty}× ${p.nombre}${p.sabor?' ('+p.sabor+')':''}`:` ${l.qty}× (eliminado)`;}).join('<br>');
+    return `<tr class="${rowCls}">
+      <td style="font-family:'DM Mono',monospace;font-size:.75rem;color:var(--text3)">${fmtD(v.fecha)}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:.72rem;color:var(--text3)">#${v.id}</td>
+      <td style="font-size:.78rem;white-space:normal;line-height:1.5">${prodR}</td>
+      <td class="r" style="font-family:'DM Mono',monospace;font-weight:700">${fmt(total)}</td>
+      <td style="font-weight:600">${v.cliente}</td>
+      <td><span class="badge ${bCls}">${bLabel}</span></td>
+      <td style="color:var(--text3);font-size:.76rem;white-space:normal">${v.notas||'—'}</td>
+      <td><div class="actions">
+        <button class="ic" title="Editar" onclick="editVenta('${v.fbKey}')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button class="ic del" title="Eliminar" onclick="deleteVenta('${v.fbKey}')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div></td>
+    </tr>`;
+  }).join('');
+  tbody.innerHTML=rows+`<tr class="tbl-footer">
+    <td colspan="2"></td><td style="font-size:.72rem">${tG} geles</td>
+    <td class="r">${fmt(tM)}</td><td colspan="4"></td></tr>`;
+}
+
+function venFilter(f,btn){
+  venFilterState=f;
+  document.querySelectorAll('#page-ventas .filter-pill').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active'); renderVentas();
+}
+
+function calcTotalModal(){
+  return lineasModal.reduce((a,l)=>{
+    const q=parseFloat(document.getElementById('lqty-'+l.uid)?.value)||0;
+    const p=parseFloat(document.getElementById('lprecio-'+l.uid)?.value)||0;
+    return a+q*p;
+  },0);
+}
+function refreshTotalModal(){ document.getElementById('vm-total-grande').textContent=fmt(calcTotalModal()); }
+function getHint(prodId){ const p=getProd(prodId); return p?`Stock: ${p.stock} · Precio sugerido: ${fmt(p.precio)}`:''; }
+
+function renderLineas(){
+  const wrap=document.getElementById('lineas-wrap');
+  if(!lineasModal.length){wrap.innerHTML='';return;}
+  wrap.innerHTML=lineasModal.map((l,i)=>{
+    const opts=productos().map(p=>`<option value="${p.id}" ${p.id===l.prodId?'selected':''}>${p.nombre}${p.sabor?' · '+p.sabor:''} (stock:${p.stock})</option>`).join('');
+    return `<div class="linea-item" id="linea-${l.uid}">
+      <div class="linea-header">
+        <span class="linea-nombre">Producto ${i+1}</span>
+        ${lineasModal.length>1?`<button class="ic-remove-linea" onclick="removeLinea(${l.uid})"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}
+      </div>
+      <div class="linea-fields">
+        <div class="form-row" style="grid-column:1/-1">
+          <label>Gel *</label>
+          <select id="lsel-${l.uid}" onchange="onLineaGelChange(${l.uid})">
+            <option value="">— Selecciona —</option>${opts}
+          </select>
+          <p class="linea-hint" id="lhint-${l.uid}">${l.prodId?getHint(l.prodId):''}</p>
+        </div>
+        <div class="form-row"><label>Cantidad</label><input type="number" id="lqty-${l.uid}" min="1" value="${l.qty||1}" oninput="refreshTotalModal()"/></div>
+        <div class="form-row"><label>Precio unit.</label><input type="number" id="lprecio-${l.uid}" min="0" step="0.5" value="${l.precio||''}" placeholder="0.00" oninput="refreshTotalModal()"/></div>
+        <div class="form-row" style="display:flex;align-items:flex-end">
+          <div><label>Subtotal</label><div id="lsub-${l.uid}" style="font-family:'DM Mono',monospace;font-weight:600;color:var(--accent);padding:8px 0;font-size:.9rem">${fmt((l.qty||0)*(l.precio||0))}</div></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  lineasModal.forEach(l=>{
+    const qEl=document.getElementById('lqty-'+l.uid);
+    const pEl=document.getElementById('lprecio-'+l.uid);
+    if(qEl&&pEl){
+      const upd=()=>{ const s=(parseFloat(qEl.value)||0)*(parseFloat(pEl.value)||0); const el=document.getElementById('lsub-'+l.uid); if(el)el.textContent=fmt(s); refreshTotalModal(); };
+      qEl.addEventListener('input',upd); pEl.addEventListener('input',upd);
+    }
+  });
+  refreshTotalModal();
+}
+
+function onLineaGelChange(uid){
+  const sel=document.getElementById('lsel-'+uid);
+  const prodId=parseInt(sel.value)||null;
+  const l=lineasModal.find(x=>x.uid===uid);
+  if(l) l.prodId=prodId;
+  const hint=document.getElementById('lhint-'+uid);
+  if(hint) hint.textContent=prodId?getHint(prodId):'';
+  const p=getProd(prodId);
+  if(p&&!editVentaId){ const pEl=document.getElementById('lprecio-'+uid); if(pEl&&!pEl.value) pEl.value=p.precio; }
+  refreshTotalModal();
+}
+
+function addLinea(prodId=null,qty=1,precio=''){
+  const uid=lineaUid++;
+  lineasModal.push({uid,prodId,qty,precio});
+  renderLineas();
+  if(prodId){ const p=getProd(prodId); if(p){ const pEl=document.getElementById('lprecio-'+uid); if(pEl&&!pEl.value) pEl.value=precio||p.precio; } }
+}
+function removeLinea(uid){ lineasModal=lineasModal.filter(l=>l.uid!==uid); renderLineas(); }
+
+function openVentaModal(reset=true){
+  if(reset){
+    editVentaId=null; lineasModal=[]; lineaUid=0;
+    document.getElementById('ven-modal-title').textContent='Registrar venta';
+    document.getElementById('vm-cliente').value='';
+    document.getElementById('vm-fecha').value=today();
+    document.getElementById('vm-estado').value='solicitado';
+    document.getElementById('vm-notas').value='';
+    document.getElementById('vm-total-grande').textContent='$0';
+    addLinea();
+  }
+  document.getElementById('ven-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('vm-cliente').focus(),50);
+}
+function closeVentaModal(){ editVentaId=null; lineasModal=[]; document.getElementById('ven-overlay').classList.remove('open'); }
+
+function editVenta(fbKey){
+  const v=ventas().find(x=>x.fbKey===fbKey);
+  if(!v) return;
+  editVentaId=fbKey; lineasModal=[]; lineaUid=0;
+  document.getElementById('ven-modal-title').textContent='Editar venta';
+  document.getElementById('vm-cliente').value=v.cliente;
+  document.getElementById('vm-fecha').value=v.fecha;
+  document.getElementById('vm-estado').value=v.estado;
+  document.getElementById('vm-notas').value=v.notas;
+  v.lineas.forEach(l=>lineasModal.push({uid:lineaUid++,prodId:l.prodId,qty:l.qty,precio:l.precio}));
+  document.getElementById('ven-overlay').classList.add('open');
+  renderLineas();
+}
+
+function saveVenta(){
+  const cliente=document.getElementById('vm-cliente').value.trim();
+  if(!cliente){alert('Escribe el nombre del cliente.');document.getElementById('vm-cliente').focus();return;}
+  const lineasData=[];
+  for(const l of lineasModal){
+    const prodId=parseInt(document.getElementById('lsel-'+l.uid)?.value)||null;
+    const qty=Math.max(1,parseInt(document.getElementById('lqty-'+l.uid)?.value)||1);
+    const precio=parseFloat(document.getElementById('lprecio-'+l.uid)?.value)||0;
+    if(!prodId){alert('Selecciona un gel en todos los productos.');return;}
+    lineasData.push({prodId,qty,precio});
+  }
+  if(!lineasData.length){alert('Agrega al menos un producto.');return;}
+
+  // Validar y ajustar stock
+  const prods=productos();
+  if(editVentaId){
+    const old=ventas().find(v=>v.fbKey===editVentaId);
+    // Devolver stock viejo
+    const stockTemp={};
+    old.lineas.forEach(l=>{ stockTemp[l.prodId]=(stockTemp[l.prodId]||0)+l.qty; });
+    // Verificar nuevo
+    for(const l of lineasData){
+      const p=prods.find(x=>x.id===l.prodId);
+      if(!p) continue;
+      const disponible=p.stock+(stockTemp[l.prodId]||0);
+      if(disponible<l.qty){alert(`Stock insuficiente de ${p.nombre}: hay ${p.stock} unidades.`);return;}
+    }
+    // Aplicar cambios de stock
+    const cambios={};
+    old.lineas.forEach(l=>{cambios[l.prodId]=(cambios[l.prodId]||0)+l.qty;});
+    lineasData.forEach(l=>{cambios[l.prodId]=(cambios[l.prodId]||0)-l.qty;});
+    prods.forEach(p=>{
+      if(cambios[p.id]!==undefined&&cambios[p.id]!==0){
+        fbSaveProd({...p, stock:p.stock+cambios[p.id]});
+      }
+    });
+    const ventaData={id:ventas().find(v=>v.fbKey===editVentaId).id, fbKey:editVentaId, cliente, fecha:document.getElementById('vm-fecha').value||today(), estado:document.getElementById('vm-estado').value, notas:document.getElementById('vm-notas').value.trim(), lineas:lineasData};
+    fbSaveVenta(ventaData);
+  } else {
+    for(const l of lineasData){
+      const p=prods.find(x=>x.id===l.prodId);
+      if(p&&p.stock<l.qty){alert(`Stock insuficiente de ${p.nombre}: hay ${p.stock} unidades.`);return;}
+    }
+    lineasData.forEach(l=>{
+      const p=prods.find(x=>x.id===l.prodId);
+      if(p) fbSaveProd({...p, stock:p.stock-l.qty});
+    });
+    fbSaveVenta({id:Date.now(), cliente, fecha:document.getElementById('vm-fecha').value||today(), estado:document.getElementById('vm-estado').value, notas:document.getElementById('vm-notas').value.trim(), lineas:lineasData});
+  }
+  closeVentaModal();
+}
+
+function deleteVenta(fbKey){
+  showConfirm('Eliminar venta','¿Eliminar esta venta? El stock será devuelto al inventario.',()=>{
+    const v=ventas().find(x=>x.fbKey===fbKey);
+    if(!v) return;
+    v.lineas.forEach(l=>{
+      const p=productos().find(x=>x.id===l.prodId);
+      if(p) fbSaveProd({...p, stock:p.stock+l.qty});
+    });
+    fbDeleteVenta(fbKey);
+  });
+}
+
+function exportExcel(){
+  const wb=XLSX.utils.book_new();
+  const iH=['Nombre/Marca','Sabor','Stock','Costo (MXN)','Envío (MXN)','Precio (MXN)','Margen (MXN)','Margen %','Alerta','Notas'];
+  const iR=productos().map(p=>{const m=p.precio-p.costo-p.envio;return[p.nombre,p.sabor,p.stock,p.costo,p.envio,p.precio,m,p.precio>0?Math.round(m/p.precio*100)+'%':'—',p.alerta,p.notas];});
+  const ws1=XLSX.utils.aoa_to_sheet([iH,...iR]);
+  ws1['!cols']=[22,14,8,14,14,14,14,10,8,25].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws1,'Inventario');
+  const ESTADOS={solicitado:'Solicitado',entregado:'Entregado sin pago',pagado_nd:'Pagado sin entregar',completo:'Pagado y entregado'};
+  const vH=['Fecha','# Venta','Cliente','Gel','Sabor','Qty','Precio unit.','Subtotal','Total venta','Estado','Notas'];
+  const vR=[];
+  ventas().forEach(v=>{v.lineas.forEach((l,i)=>{const p=getProd(l.prodId);vR.push([v.fecha,v.id,v.cliente,p?p.nombre:'(eliminado)',p?p.sabor:'',l.qty,l.precio,l.qty*l.precio,i===0?ventaTotal(v):'',i===0?ESTADOS[v.estado]||v.estado:'',i===0?v.notas:'']);});});
+  const ws2=XLSX.utils.aoa_to_sheet([vH,...vR]);
+  ws2['!cols']=[11,8,18,20,13,6,14,12,12,22,22].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws2,'Ventas');
+  const cob=ventas().filter(v=>v.estado==='completo'||v.estado==='pagado_nd').reduce((a,v)=>a+ventaTotal(v),0);
+  const pCob=ventas().filter(v=>v.estado==='solicitado'||v.estado==='entregado').reduce((a,v)=>a+ventaTotal(v),0);
+  const ws3=XLSX.utils.aoa_to_sheet([
+    ['RESUMEN GENERAL'],['Generado:',new Date().toLocaleString('es-MX')],[],
+    ['INVENTARIO'],['Total productos',productos().length],['Unidades en stock',productos().reduce((a,p)=>a+p.stock,0)],
+    ['Valor en costo',productos().reduce((a,p)=>a+p.stock*(p.costo+p.envio),0)],
+    ['Valor a precio venta',productos().reduce((a,p)=>a+p.stock*p.precio,0)],[],
+    ['VENTAS'],['Total transacciones',ventas().length],['Total geles',ventas().reduce((a,v)=>a+ventaGeles(v),0)],
+    ['Monto total',ventas().reduce((a,v)=>a+ventaTotal(v),0)],['Ya cobrado',cob],['Por cobrar',pCob],
+    ['Solicitado',ventas().filter(v=>v.estado==='solicitado').reduce((a,v)=>a+ventaTotal(v),0)],
+    ['Entregado sin pago',ventas().filter(v=>v.estado==='entregado').reduce((a,v)=>a+ventaTotal(v),0)],
+    ['Pagado sin entregar',ventas().filter(v=>v.estado==='pagado_nd').reduce((a,v)=>a+ventaTotal(v),0)],
+    ['Pagado y entregado',ventas().filter(v=>v.estado==='completo').reduce((a,v)=>a+ventaTotal(v),0)],
+  ]);
+  ws3['!cols']=[{wch:30},{wch:20}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
+  XLSX.writeFile(wb,`geles_${today()}.xlsx`);
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeInvModal();closeVentaModal();closeConfirm();}});
+</script>
+</body>
+</html>
