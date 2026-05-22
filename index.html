@@ -998,7 +998,7 @@ function renderLotes(){
       <div class="lote-card-header">
         <div>
           <div class="lote-nombre">${l.nombre}</div>
-          <div class="lote-fecha">${fmtD(l.fecha)} · ${totalUnd} unidades${l.notas?' · '+l.notas:''}</div>
+          <div class="lote-fecha">${fmtD(l.fecha)}${l.fecha_hasta&&l.fecha_hasta!==l.fecha?' → '+fmtD(l.fecha_hasta):''} · ${totalUnd} unidades${l.notas?' · '+l.notas:''}</div>
         </div>
         <button class="ic del" title="Eliminar lote" onclick="deleteLote('${l.fbKey}')">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
@@ -1094,7 +1094,9 @@ function saveLote(){
     lineas.push({nombre:nom,qty,costo,envio,precio});
   }
   if(!lineas.length){alert('Agrega al menos un producto.');return;}
-  fbSaveLote({fecha:document.getElementById('lm-fecha').value||today(), nombre, notas:document.getElementById('lm-notas').value.trim(), lineas});
+  const fechaDesde=document.getElementById('lm-desde').value||today();
+  const fechaHasta=document.getElementById('lm-hasta').value||today();
+  fbSaveLote({fecha:fechaDesde, fecha_hasta:fechaHasta, nombre, notas:document.getElementById('lm-notas').value.trim(), lineas});
   closeLoteModal();
 }
 
