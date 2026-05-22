@@ -51,6 +51,14 @@ listen('productos', data => {
   if(window._appReady){ renderInventario(); renderVentas(); }
 });
 
+// Lotes
+listen('lotes', data => {
+  window._lotes = data
+    ? Object.entries(data).map(([fbKey,v])=>({...v, fbKey}))
+    : [];
+  if(window._appReady){ renderLotes(); }
+});
+
 // Ventas
 listen('ventas', data => {
   window._ventas = data
@@ -204,6 +212,26 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
 .total-venta-grande{font-size:1.4rem;font-weight:700;color:var(--accent);font-family:'DM Mono',monospace;padding:4px 0;}
 .ic-remove-linea{background:transparent;border:none;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;display:flex;align-items:center;}
 .ic-remove-linea:hover{color:var(--red-text);}
+/* ═══ LOTES ══════════════════════════════════════════════ */
+.lote-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:6px;}
+.lote-card-header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;}
+.lote-nombre{font-weight:700;font-size:.92rem;letter-spacing:-.01em;}
+.lote-fecha{font-size:.68rem;color:var(--text3);font-family:'DM Mono',monospace;margin-top:2px;}
+.lote-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:4px;}
+.lote-stat{background:var(--surface2);border-radius:8px;padding:6px 10px;}
+.lote-stat-label{font-size:.62rem;color:var(--text3);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px;}
+.lote-stat-val{font-size:1rem;font-weight:700;letter-spacing:-.02em;}
+.lote-stat-val.green{color:var(--green-text);}
+.lote-stat-val.blue{color:var(--blue-text);}
+.lote-stat-val.amber{color:var(--yellow-text);}
+.lote-lineas{margin-top:6px;border-top:1px solid var(--border);padding-top:8px;display:flex;flex-wrap:wrap;gap:6px;}
+.lote-linea-tag{font-size:.72rem;background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;font-family:'DM Mono',monospace;color:var(--text2);}
+.lotes-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;padding:0 2rem 2rem;}
+@media(max-width:640px){
+  .lotes-grid{padding:0 1rem 1.5rem;grid-template-columns:1fr;}
+  .lote-stats{grid-template-columns:repeat(2,1fr);}
+}
+
 
 /* ═══ RESPONSIVO MÓVIL ═══════════════════════════════════ */
 @media(max-width:640px){
@@ -289,6 +317,9 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
     <button class="nav-tab active" onclick="showPage('inventario',this)">
       <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Inventario
     </button>
+    <button class="nav-tab" onclick="showPage('lotes',this)">
+      <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>Lotes
+    </button>
     <button class="nav-tab" onclick="showPage('ventas',this)">
       <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>Ventas
     </button>
@@ -332,6 +363,18 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
   </div>
 </div>
 
+<!-- LOTES -->
+<div class="page" id="page-lotes">
+  <div class="metrics-bar" id="lot-metrics"></div>
+  <div class="section-title">Historial de lotes <span id="lot-count"></span></div>
+  <div class="toolbar">
+    <button class="btn-primary" onclick="openLoteModal()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Nuevo lote
+    </button>
+  </div>
+  <div class="lotes-grid" id="lot-grid"></div>
+</div>
+
 <!-- VENTAS -->
 <div class="page" id="page-ventas">
   <div class="metrics-bar" id="ven-metrics"></div>
@@ -367,6 +410,27 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
     <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#fff3c4;border:1px solid #f0c842;border-radius:3px;display:inline-block"></span>Entregado sin pago</div>
     <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#ede9ff;border:1px solid #c4b5fd;border-radius:3px;display:inline-block"></span>Pagado sin entregar</div>
     <div style="display:flex;align-items:center;gap:6px;font-size:.75rem;color:var(--text3);font-family:'DM Mono',monospace"><span style="width:12px;height:12px;background:#d6f0df;border:1px solid #7ecfa0;border-radius:3px;display:inline-block"></span>Pagado y entregado</div>
+  </div>
+</div>
+
+<!-- MODAL LOTE -->
+<div class="overlay" id="lot-overlay" onclick="if(event.target===this)closeLoteModal()">
+  <div class="modal">
+    <h2 id="lot-modal-title">Nuevo lote</h2>
+    <div class="form-grid">
+      <div class="form-row full"><label>Nombre del lote *</label><input id="lm-nombre" type="text" placeholder="ej. Mayo 2025, Pedido #3…"/></div>
+      <div class="form-row"><label>Fecha</label><input id="lm-fecha" type="date"/></div>
+      <div class="form-row"><label>Notas</label><input id="lm-notas" type="text" placeholder="ej. Proveedor, condiciones…"/></div>
+    </div>
+    <div style="margin:1rem 0 .5rem;font-size:.78rem;font-weight:600;color:var(--text2)">Productos en este lote</div>
+    <div id="lm-lineas"></div>
+    <button class="btn-add-linea" onclick="addLoteLinea()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Agregar producto
+    </button>
+    <div class="modal-foot">
+      <button class="btn-ghost" onclick="closeLoteModal()">Cancelar</button>
+      <button class="btn-primary" onclick="saveLote()">Guardar lote</button>
+    </div>
   </div>
 </div>
 
@@ -439,10 +503,12 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
 <script>
 window._productos = [];
 window._ventas    = [];
+window._lotes     = [];
 
 // Alias cortos
 function productos(){ return window._productos; }
 function ventas()   { return window._ventas; }
+function lotes()    { return window._lotes; }
 
 const fmt   = n => '$'+Math.round(Number(n)).toLocaleString('es-MX');
 const fmtD  = s => { if(!s) return '—'; const[,m,d]=s.split('-'); const M=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']; return `${d} ${M[+m-1]}`; };
@@ -487,6 +553,8 @@ function fbSaveVenta(venta){
   return window._dbPush('ventas', data).then(r => r.key);
 }
 function fbDeleteVenta(fbKey){ return window._dbRemove('ventas/'+fbKey); }
+function fbSaveLote(lote){ const {fbKey,...data}=lote; if(fbKey) return window._dbSet('lotes/'+fbKey,{...data}); return window._dbPush('lotes',data).then(r=>r.key); }
+function fbDeleteLote(fbKey){ return window._dbRemove('lotes/'+fbKey); }
 
 let _confirmCb=null;
 function showConfirm(title,msg,cb){ document.getElementById('confirm-title').textContent=title; document.getElementById('confirm-msg').textContent=msg; _confirmCb=cb; document.getElementById('confirm-overlay').classList.add('open'); }
@@ -498,7 +566,7 @@ function showPage(name,btn){
   document.querySelectorAll('.nav-tab').forEach(b=>b.classList.remove('active'));
   document.getElementById('page-'+name).classList.add('active');
   btn.classList.add('active');
-  name==='inventario' ? renderInventario() : renderVentas();
+  if(name==='inventario') renderInventario(); else if(name==='lotes') renderLotes(); else renderVentas();
 }
 
 function renderInvMetrics(){
@@ -878,6 +946,114 @@ function deleteVenta(fbKey){
   });
 }
 
+
+// ═══ LOTES ════════════════════════════════════════════════
+let loteLineas=[], loteLineaUid=0;
+
+function renderLoteMetrics(){
+  const ls=lotes();
+  const totalLotes=ls.length;
+  const totalInvertido=ls.reduce((a,l)=>a+l.lineas.reduce((b,x)=>b+x.qty*(x.costo+x.envio),0),0);
+  const totalVentaLotes=ls.reduce((a,l)=>a+l.lineas.reduce((b,x)=>b+x.qty*x.precio,0),0);
+  const utilidad=totalVentaLotes-totalInvertido;
+  document.getElementById('lot-metrics').innerHTML=`
+    <div class="metric"><div class="metric-label">Lotes registrados</div><div class="metric-val gray">${totalLotes}</div></div>
+    <div class="metric"><div class="metric-label">Total invertido</div><div class="metric-val blue">${fmt(totalInvertido)}</div><div class="metric-sub">costo + envío</div></div>
+    <div class="metric"><div class="metric-label">Valor a precio venta</div><div class="metric-val gray">${fmt(totalVentaLotes)}</div></div>
+    <div class="metric"><div class="metric-label">Utilidad potencial</div><div class="metric-val green">${fmt(utilidad)}</div></div>`;
+}
+
+function renderLotes(){
+  renderLoteMetrics();
+  const ls=lotes().slice().sort((a,b)=>b.fecha.localeCompare(a.fecha));
+  document.getElementById('lot-count').textContent=`${ls.length} lote${ls.length!==1?'s':''}`;
+  const grid=document.getElementById('lot-grid');
+  if(!ls.length){grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1">No hay lotes registrados aún.</div>`;return;}
+  grid.innerHTML=ls.map(l=>{
+    const invertido=l.lineas.reduce((a,x)=>a+x.qty*(x.costo+x.envio),0);
+    const ventaTotal=l.lineas.reduce((a,x)=>a+x.qty*x.precio,0);
+    const utilidad=ventaTotal-invertido;
+    const totalUnd=l.lineas.reduce((a,x)=>a+x.qty,0);
+    const tags=l.lineas.map(x=>`<span class="lote-linea-tag">${x.qty}× ${x.nombre}</span>`).join('');
+    return `<div class="lote-card">
+      <div class="lote-card-header">
+        <div>
+          <div class="lote-nombre">${l.nombre}</div>
+          <div class="lote-fecha">${fmtD(l.fecha)} · ${totalUnd} unidades${l.notas?' · '+l.notas:''}</div>
+        </div>
+        <button class="ic del" title="Eliminar lote" onclick="deleteLote('${l.fbKey}')">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
+      </div>
+      <div class="lote-stats">
+        <div class="lote-stat"><div class="lote-stat-label">Invertido</div><div class="lote-stat-val blue">${fmt(invertido)}</div></div>
+        <div class="lote-stat"><div class="lote-stat-label">A precio venta</div><div class="lote-stat-val">${fmt(ventaTotal)}</div></div>
+        <div class="lote-stat"><div class="lote-stat-label">Utilidad</div><div class="lote-stat-val green">${fmt(utilidad)}</div></div>
+        <div class="lote-stat"><div class="lote-stat-label">Margen</div><div class="lote-stat-val amber">${ventaTotal>0?Math.round(utilidad/ventaTotal*100):0}%</div></div>
+      </div>
+      <div class="lote-lineas">${tags}</div>
+    </div>`;
+  }).join('');
+}
+
+function addLoteLinea(){
+  const uid=loteLineaUid++;
+  loteLineas.push({uid});
+  renderLoteLineas();
+}
+function removeLoteLinea(uid){ loteLineas=loteLineas.filter(l=>l.uid!==uid); renderLoteLineas(); }
+
+function renderLoteLineas(){
+  document.getElementById('lm-lineas').innerHTML=loteLineas.map((l,i)=>`
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+        <span style="font-weight:600;font-size:.82rem">Producto ${i+1}</span>
+        ${loteLineas.length>1?`<button class="ic-remove-linea" onclick="removeLoteLinea(${l.uid})"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:8px;align-items:end;">
+        <div class="form-row"><label>Nombre</label><input type="text" id="ln-nombre-${l.uid}" placeholder="ej. Maurten 100" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Cantidad</label><input type="number" id="ln-qty-${l.uid}" min="1" value="1" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Costo</label><input type="number" id="ln-costo-${l.uid}" min="0" step=".5" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Envío unit.</label><input type="number" id="ln-envio-${l.uid}" min="0" step=".5" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Precio venta</label><input type="number" id="ln-precio-${l.uid}" min="0" step=".5" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
+      </div>
+    </div>`).join('');
+}
+
+function openLoteModal(){
+  loteLineas=[]; loteLineaUid=0;
+  document.getElementById('lot-modal-title').textContent='Nuevo lote';
+  document.getElementById('lm-nombre').value='';
+  document.getElementById('lm-fecha').value=today();
+  document.getElementById('lm-notas').value='';
+  addLoteLinea();
+  document.getElementById('lot-overlay').classList.add('open');
+  setTimeout(()=>document.getElementById('lm-nombre').focus(),50);
+}
+function closeLoteModal(){ loteLineas=[]; document.getElementById('lot-overlay').classList.remove('open'); }
+
+function saveLote(){
+  const nombre=document.getElementById('lm-nombre').value.trim();
+  if(!nombre){alert('Escribe el nombre del lote.');document.getElementById('lm-nombre').focus();return;}
+  const lineas=[];
+  for(const l of loteLineas){
+    const nom=(document.getElementById('ln-nombre-'+l.uid)?.value||'').trim();
+    const qty=parseInt(document.getElementById('ln-qty-'+l.uid)?.value)||0;
+    const costo=parseFloat(document.getElementById('ln-costo-'+l.uid)?.value)||0;
+    const envio=parseFloat(document.getElementById('ln-envio-'+l.uid)?.value)||0;
+    const precio=parseFloat(document.getElementById('ln-precio-'+l.uid)?.value)||0;
+    if(!nom){alert('Escribe el nombre del producto en todas las líneas.');return;}
+    lineas.push({nombre:nom,qty,costo,envio,precio});
+  }
+  if(!lineas.length){alert('Agrega al menos un producto.');return;}
+  fbSaveLote({fecha:document.getElementById('lm-fecha').value||today(), nombre, notas:document.getElementById('lm-notas').value.trim(), lineas});
+  closeLoteModal();
+}
+
+function deleteLote(fbKey){
+  showConfirm('Eliminar lote','¿Eliminar este lote? Solo se borra el registro histórico, no afecta el inventario actual.',()=>fbDeleteLote(fbKey));
+}
+
 function exportExcel(){
   const wb=XLSX.utils.book_new();
   const iH=['Nombre/Marca','Sabor','Stock','Costo (MXN)','Envío (MXN)','Precio (MXN)','Margen (MXN)','Margen %','Alerta','Notas'];
@@ -911,7 +1087,7 @@ function exportExcel(){
   XLSX.writeFile(wb,`geles_${today()}.xlsx`);
 }
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeInvModal();closeVentaModal();closeConfirm();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeInvModal();closeVentaModal();closeLoteModal();closeConfirm();}});
 </script>
 </body>
 </html>
