@@ -814,6 +814,17 @@ function calcTotalModal(){
 function refreshTotalModal(){ document.getElementById('vm-total-grande').textContent=fmt(calcTotalModal()); }
 function getHint(prodId){ const p=getProd(prodId); return p?`Stock: ${p.stock} · Precio sugerido: ${fmt(p.precio)}`:''; }
 
+function saveLineasState(){
+  lineasModal.forEach(l=>{
+    const qEl=document.getElementById('lqty-'+l.uid);
+    const pEl=document.getElementById('lprecio-'+l.uid);
+    const sEl=document.getElementById('lsel-'+l.uid);
+    if(qEl) l.qty=parseFloat(qEl.value)||l.qty||1;
+    if(pEl) l.precio=parseFloat(pEl.value)||l.precio||'';
+    if(sEl) l.prodId=parseInt(sEl.value)||l.prodId||null;
+  });
+}
+
 function renderLineas(){
   const wrap=document.getElementById('lineas-wrap');
   if(!lineasModal.length){wrap.innerHTML='';return;}
@@ -864,12 +875,13 @@ function onLineaGelChange(uid){
 }
 
 function addLinea(prodId=null,qty=1,precio=''){
+  saveLineasState();
   const uid=lineaUid++;
   lineasModal.push({uid,prodId,qty,precio});
   renderLineas();
   if(prodId){ const p=getProd(prodId); if(p){ const pEl=document.getElementById('lprecio-'+uid); if(pEl&&!pEl.value) pEl.value=precio||p.precio; } }
 }
-function removeLinea(uid){ lineasModal=lineasModal.filter(l=>l.uid!==uid); renderLineas(); }
+function removeLinea(uid){ saveLineasState(); lineasModal=lineasModal.filter(l=>l.uid!==uid); renderLineas(); }
 
 function openVentaModal(reset=true){
   if(reset){
