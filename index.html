@@ -48,10 +48,13 @@ listen('productos', data => {
   window._productos = data
     ? Object.entries(data).map(([fbKey,v])=>({...v, fbKey}))
     : [];
-  // Migración: productos sin stock_inicial → fijar con su stock actual
+  // Migración: productos sin stock_inicial o fecha_creacion
   window._productos.forEach(p => {
     if(p.stock_inicial === undefined) {
       window._dbSet('productos/' + p.fbKey + '/stock_inicial', p.stock);
+    }
+    if(!p.fecha_creacion) {
+      window._dbSet('productos/' + p.fbKey + '/fecha_creacion', today());
     }
   });
   if(window._appReady){ renderInventario(); renderVentas(); }
@@ -425,14 +428,16 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
     <h2 id="lot-modal-title">Nuevo lote</h2>
     <div class="form-grid">
       <div class="form-row full"><label>Nombre del lote *</label><input id="lm-nombre" type="text" placeholder="ej. Mayo 2025, Pedido #3…"/></div>
-      <div class="form-row"><label>Fecha</label><input id="lm-fecha" type="date"/></div>
-      <div class="form-row"><label>Notas</label><input id="lm-notas" type="text" placeholder="ej. Proveedor, condiciones…"/></div>
+      <div class="form-row"><label>Desde</label><input id="lm-desde" type="date" oninput="buscarProdsPorFecha()"/></div>
+      <div class="form-row"><label>Hasta</label><input id="lm-hasta" type="date" oninput="buscarProdsPorFecha()"/></div>
+      <div class="form-row full"><label>Notas</label><input id="lm-notas" type="text" placeholder="ej. Proveedor, condiciones…"/></div>
     </div>
-    <div style="margin:1rem 0 .5rem;font-size:.78rem;font-weight:600;color:var(--text2)">Productos en este lote</div>
+    <div style="margin:1rem 0 .5rem;display:flex;align-items:center;justify-content:space-between">
+      <span style="font-size:.78rem;font-weight:600;color:var(--text2)">Productos en este lote</span>
+      <button class="btn-ghost" style="font-size:.72rem;padding:4px 10px" onclick="addLoteLinea()">+ Agregar manual</button>
+    </div>
+    <div id="lm-fecha-hint" style="font-size:.72rem;color:var(--text3);font-family:'DM Mono',monospace;margin-bottom:8px"></div>
     <div id="lm-lineas"></div>
-    <button class="btn-add-linea" onclick="addLoteLinea()">
-      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Agregar producto
-    </button>
     <div class="modal-foot">
       <button class="btn-ghost" onclick="closeLoteModal()">Cancelar</button>
       <button class="btn-primary" onclick="saveLote()">Guardar lote</button>
@@ -578,15 +583,19 @@ function showPage(name,btn){
 function renderInvMetrics(){
   const prods = productos();
   const unds  = prods.reduce((a,p)=>a+p.stock,0);
-  const vC    = prods.reduce((a,p)=>a+p.stock*(p.costo+p.envio),0);
-  const vV    = prods.reduce((a,p)=>a+p.stock*p.precio,0);
+  // Usar stock_inicial para costo y venta (fijo, no baja con ventas)
+  const si    = p => p.stock_inicial !== undefined ? p.stock_inicial : p.stock;
+  const vC    = prods.reduce((a,p)=>a+si(p)*(p.costo+p.envio),0);
+  const vV    = prods.reduce((a,p)=>a+si(p)*p.precio,0);
+  const util  = vV - vC;
   const bajos = prods.filter(p=>p.stock>0&&p.stock<=p.alerta).length;
   const agot  = prods.filter(p=>p.stock===0).length;
   document.getElementById('inv-metrics').innerHTML=`
     <div class="metric"><div class="metric-label">Productos</div><div class="metric-val gray">${prods.length}</div></div>
-    <div class="metric"><div class="metric-label">En stock</div><div class="metric-val blue">${unds}</div></div>
-    <div class="metric"><div class="metric-label">Valor en costo</div><div class="metric-val gray">${fmt(vC)}</div><div class="metric-sub">costo + envío</div></div>
-    <div class="metric"><div class="metric-label">Valor a precio venta</div><div class="metric-val green">${fmt(vV)}</div></div>
+    <div class="metric"><div class="metric-label">Disponible ahora</div><div class="metric-val blue">${unds}</div></div>
+    <div class="metric"><div class="metric-label">Costo total del lote</div><div class="metric-val gray">${fmt(vC)}</div><div class="metric-sub">stock inicial × (costo+envío)</div></div>
+    <div class="metric"><div class="metric-label">Valor a precio venta</div><div class="metric-val blue">${fmt(vV)}</div><div class="metric-sub">stock inicial × precio</div></div>
+    <div class="metric"><div class="metric-label">Utilidad potencial</div><div class="metric-val green">${fmt(util)}</div><div class="metric-sub">venta − costo</div></div>
     <div class="metric"><div class="metric-label">Bajo / agotado</div><div class="metric-val red">${bajos+agot}</div><div class="metric-sub">${bajos} bajo · ${agot} agotado</div></div>`;
 }
 
@@ -709,6 +718,7 @@ function saveInvItem(){
     precio:parseFloat(document.getElementById('im-precio').value)||0,
     alerta:Math.max(1,parseInt(document.getElementById('im-alerta').value)||5),
     notas:document.getElementById('im-notas').value.trim(),
+    fecha_creacion: existente ? existente.fecha_creacion||today() : today(),
   };
   if(editProdId) data.fbKey=editProdId;
   fbSaveProd(data);
@@ -1007,35 +1017,64 @@ function renderLotes(){
 
 function addLoteLinea(){
   const uid=loteLineaUid++;
-  loteLineas.push({uid});
+  loteLineas.push({uid, nombre:'', qty:1, costo:'', envio:'', precio:''});
   renderLoteLineas();
 }
 function removeLoteLinea(uid){ loteLineas=loteLineas.filter(l=>l.uid!==uid); renderLoteLineas(); }
 
 function renderLoteLineas(){
-  document.getElementById('lm-lineas').innerHTML=loteLineas.map((l,i)=>`
+  const wrap = document.getElementById('lm-lineas');
+  if(!loteLineas.length){ wrap.innerHTML='<div style="text-align:center;padding:1rem;color:var(--text3);font-size:.8rem;font-family:'DM Mono',monospace">Selecciona un rango de fechas o agrega manualmente</div>'; return; }
+  wrap.innerHTML=loteLineas.map((l,i)=>`
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;margin-bottom:8px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
-        <span style="font-weight:600;font-size:.82rem">Producto ${i+1}</span>
-        ${loteLineas.length>1?`<button class="ic-remove-linea" onclick="removeLoteLinea(${l.uid})"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>`:''}
+        <span style="font-weight:600;font-size:.82rem">${l.nombre||'Producto '+(i+1)}</span>
+        <button class="ic-remove-linea" onclick="removeLoteLinea(${l.uid})"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr 1fr;gap:8px;align-items:end;">
-        <div class="form-row"><label>Nombre</label><input type="text" id="ln-nombre-${l.uid}" placeholder="ej. Maurten 100" style="font-size:.8rem;padding:6px 8px"/></div>
-        <div class="form-row"><label>Cantidad</label><input type="number" id="ln-qty-${l.uid}" min="1" value="1" style="font-size:.8rem;padding:6px 8px"/></div>
-        <div class="form-row"><label>Costo</label><input type="number" id="ln-costo-${l.uid}" min="0" step=".5" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
-        <div class="form-row"><label>Envío unit.</label><input type="number" id="ln-envio-${l.uid}" min="0" step=".5" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
-        <div class="form-row"><label>Precio venta</label><input type="number" id="ln-precio-${l.uid}" min="0" step=".5" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Nombre</label><input type="text" id="ln-nombre-${l.uid}" value="${l.nombre||''}" placeholder="ej. Maurten 100" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Cantidad</label><input type="number" id="ln-qty-${l.uid}" min="1" value="${l.qty||1}" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Costo</label><input type="number" id="ln-costo-${l.uid}" min="0" step=".5" value="${l.costo||''}" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Envío unit.</label><input type="number" id="ln-envio-${l.uid}" min="0" step=".5" value="${l.envio||''}" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
+        <div class="form-row"><label>Precio venta</label><input type="number" id="ln-precio-${l.uid}" min="0" step=".5" value="${l.precio||''}" placeholder="0" style="font-size:.8rem;padding:6px 8px"/></div>
       </div>
     </div>`).join('');
+}
+
+function buscarProdsPorFecha(){
+  const desde = document.getElementById('lm-desde').value;
+  const hasta = document.getElementById('lm-hasta').value;
+  if(!desde || !hasta) return;
+  const hint = document.getElementById('lm-fecha-hint');
+  // Filtrar productos creados en el rango
+  const encontrados = productos().filter(p => {
+    const f = p.fecha_creacion || '';
+    return f >= desde && f <= hasta;
+  });
+  if(!encontrados.length){
+    hint.textContent = 'No se encontraron productos agregados en ese rango. Puedes agregarlos manualmente.';
+    loteLineas = []; loteLineaUid = 0; renderLoteLineas(); return;
+  }
+  hint.textContent = `${encontrados.length} producto${encontrados.length>1?'s':''} encontrado${encontrados.length>1?'s':''} en ese rango ✓`;
+  hint.style.color = 'var(--green-text)';
+  // Rellenar líneas con los productos encontrados
+  loteLineas = []; loteLineaUid = 0;
+  encontrados.forEach(p => {
+    loteLineas.push({uid: loteLineaUid++, nombre: p.nombre+(p.sabor?' '+p.sabor:''), qty: p.stock_inicial||p.stock, costo: p.costo, envio: p.envio, precio: p.precio});
+  });
+  renderLoteLineas();
 }
 
 function openLoteModal(){
   loteLineas=[]; loteLineaUid=0;
   document.getElementById('lot-modal-title').textContent='Nuevo lote';
   document.getElementById('lm-nombre').value='';
-  document.getElementById('lm-fecha').value=today();
+  document.getElementById('lm-desde').value='';
+  document.getElementById('lm-hasta').value=today();
   document.getElementById('lm-notas').value='';
-  addLoteLinea();
+  document.getElementById('lm-fecha-hint').textContent='Selecciona un rango de fechas para cargar los productos automáticamente.';
+  document.getElementById('lm-fecha-hint').style.color='';
+  renderLoteLineas();
   document.getElementById('lot-overlay').classList.add('open');
   setTimeout(()=>document.getElementById('lm-nombre').focus(),50);
 }
