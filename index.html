@@ -48,6 +48,12 @@ listen('productos', data => {
   window._productos = data
     ? Object.entries(data).map(([fbKey,v])=>({...v, fbKey}))
     : [];
+  // Migración: productos sin stock_inicial → fijar con su stock actual
+  window._productos.forEach(p => {
+    if(p.stock_inicial === undefined) {
+      window._dbSet('productos/' + p.fbKey + '/stock_inicial', p.stock);
+    }
+  });
   if(window._appReady){ renderInventario(); renderVentas(); }
 });
 
@@ -600,7 +606,7 @@ function renderInventario(){
   const list=getInvFiltered();
   document.getElementById('inv-count').textContent=`${list.length} producto${list.length!==1?'s':''}`;
   const tbody=document.getElementById('inv-tbody');
-  if(!list.length){tbody.innerHTML=`<tr><td colspan="9" class="empty-state">No hay productos aquí.</td></tr>`;return;}
+  if(!list.length){tbody.innerHTML=`<tr><td colspan="10" class="empty-state">No hay productos aquí.</td></tr>`;return;}
   let tS=0,tC=0,tP=0;
   const rows=list.map(p=>{
     const low=p.stock>0&&p.stock<=p.alerta, zero=p.stock===0;
@@ -608,10 +614,13 @@ function renderInventario(){
     const margenPct=p.precio>0?Math.round(margen/p.precio*100):0;
     const badge=zero?'<span class="badge b-low">Agotado</span>':low?'<span class="badge b-low">⚠ Bajo</span>':'<span class="badge b-stock">OK</span>';
     const lowB=(low||zero)?'<span class="low-badge">¡Resurtir!</span>':'';
+    // stock_inicial: usa el guardado; si no existe (producto viejo), muestra stock actual
+    const si = p.stock_inicial !== undefined ? p.stock_inicial : p.stock;
     tS+=p.stock; tC+=p.stock*(p.costo+p.envio); tP+=p.stock*p.precio;
     return `<tr class="${(low||zero)?'stock-low':''}">
       <td style="font-weight:600">${p.nombre}${lowB}</td>
       <td style="color:var(--text2)">${p.sabor||'—'}</td>
+      <td class="r" style="font-family:'DM Mono',monospace;color:var(--text3)">${si}</td>
       <td class="r"><span class="stock-num ${zero?'zero':low?'low':'ok'}">${p.stock}</span></td>
       <td class="r" style="font-family:'DM Mono',monospace">${fmt(p.costo)}</td>
       <td class="r" style="font-family:'DM Mono',monospace">${fmt(p.envio)}</td>
@@ -633,7 +642,7 @@ function renderInventario(){
   }).join('');
   tbody.innerHTML=rows+`<tr class="tbl-footer">
     <td colspan="2" style="text-align:right;padding-right:14px">TOTALES</td>
-    <td class="r">${tS}</td><td class="r">${fmt(tC)}</td><td></td>
+    <td></td><td class="r">${tS}</td><td class="r">${fmt(tC)}</td><td></td>
     <td class="r">${fmt(tP)}</td><td colspan="3"></td></tr>`;
 }
 
