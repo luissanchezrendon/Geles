@@ -1024,7 +1024,7 @@ function removeLoteLinea(uid){ loteLineas=loteLineas.filter(l=>l.uid!==uid); ren
 
 function renderLoteLineas(){
   const wrap = document.getElementById('lm-lineas');
-  if(!loteLineas.length){ wrap.innerHTML='<div style="text-align:center;padding:1rem;color:var(--text3);font-size:.8rem;font-family:'DM Mono',monospace">Selecciona un rango de fechas o agrega manualmente</div>'; return; }
+  if(!loteLineas.length){ wrap.innerHTML='<div style="text-align:center;padding:1rem;color:var(--text3);font-size:.8rem;font-family:DM Mono,monospace">Selecciona un rango de fechas o agrega manualmente</div>'; return; }
   wrap.innerHTML=loteLineas.map((l,i)=>`
     <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:.75rem 1rem;margin-bottom:8px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
