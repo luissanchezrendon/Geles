@@ -204,6 +204,70 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
 .total-venta-grande{font-size:1.4rem;font-weight:700;color:var(--accent);font-family:'DM Mono',monospace;padding:4px 0;}
 .ic-remove-linea{background:transparent;border:none;cursor:pointer;color:var(--text3);padding:2px;border-radius:4px;display:flex;align-items:center;}
 .ic-remove-linea:hover{color:var(--red-text);}
+
+/* ═══ RESPONSIVO MÓVIL ═══════════════════════════════════ */
+@media(max-width:640px){
+
+  /* Nav */
+  nav{padding:0 1rem;flex-wrap:wrap;}
+  .nav-brand{font-size:.95rem;margin-right:1rem;padding:.75rem 0;}
+  .nav-tab{padding:0 .75rem;font-size:.78rem;gap:4px;}
+  .nav-tab svg{display:none;}
+  .nav-right{gap:6px;}
+  .btn-export span{display:none;}
+  .sync-info{display:none;}
+  .btn-export{padding:6px 10px;font-size:.75rem;}
+
+  /* Métricas: 2 columnas en móvil */
+  .metrics-bar{grid-template-columns:1fr 1fr;padding:1rem 1rem 0;gap:8px;}
+  .metric{padding:.75rem 1rem;}
+  .metric-val{font-size:1.4rem;}
+
+  /* Títulos y toolbar */
+  .section-title{padding:1rem 1rem 0;font-size:1rem;}
+  .toolbar{padding:.75rem 1rem .5rem;gap:6px;}
+  .filter-pill{font-size:.72rem;padding:4px 10px;}
+  .search-box{margin-left:0;width:100%;}
+  .search-box input{width:100%;}
+  .btn-primary{font-size:.78rem;padding:7px 12px;}
+
+  /* Tabla → ocultar columnas menos importantes */
+  .tbl-wrap{margin:0 1rem 1.5rem;border-radius:10px;}
+
+  /* Inventario: ocultar Envío, Margen en móvil, mantener Inicial y Disponible */
+  #page-inventario table th:nth-child(6),
+  #page-inventario table td:nth-child(6),
+  #page-inventario table th:nth-child(8),
+  #page-inventario table td:nth-child(8){display:none;}
+
+  /* Ventas: ocultar # y Notas en móvil */
+  #page-ventas table th:nth-child(2),
+  #page-ventas table td:nth-child(2),
+  #page-ventas table th:nth-child(7),
+  #page-ventas table td:nth-child(7){display:none;}
+
+  thead th{font-size:.62rem;padding:7px 8px;letter-spacing:.04em;}
+  td{padding:8px 8px;font-size:.78rem;}
+
+  /* Modal: pantalla completa en móvil */
+  .overlay{padding:.5rem;}
+  .modal{width:100%;padding:1.25rem;border-radius:12px;}
+  .form-grid{grid-template-columns:1fr;}
+  .full{grid-column:1;}
+  .linea-item .linea-fields{grid-template-columns:1fr 1fr;}
+
+  /* Confirm modal */
+  .confirm-modal{width:100%;}
+
+  /* Leyenda */
+  #page-ventas > div:last-child{padding:0 1rem 1.5rem;gap:10px;}
+}
+
+@media(max-width:400px){
+  .metrics-bar{grid-template-columns:1fr 1fr;}
+  .metric-val{font-size:1.2rem;}
+  nav{padding:0 .75rem;}
+}
 </style>
 </head>
 <body>
@@ -257,11 +321,11 @@ tr.v-completo td{background:#f0fbf4!important;}tr.v-completo:hover td{background
   <div class="tbl-wrap">
     <table>
       <thead><tr>
-        <th style="width:22%">Nombre / marca</th><th style="width:13%">Sabor</th>
-        <th class="r" style="width:8%">Stock</th><th class="r" style="width:10%">Costo</th>
-        <th class="r" style="width:9%">Envío</th><th class="r" style="width:10%">Precio</th>
-        <th class="r" style="width:10%">Margen</th><th style="width:9%">Estado</th>
-        <th style="width:9%">Acciones</th>
+        <th style="width:19%">Nombre / marca</th><th style="width:11%">Sabor</th>
+        <th class="r" style="width:7%">Inicial</th><th class="r" style="width:8%">Disponible</th><th class="r" style="width:8%">Costo</th>
+        <th class="r" style="width:8%">Envío</th><th class="r" style="width:8%">Precio</th>
+        <th class="r" style="width:8%">Margen</th><th style="width:8%">Estado</th>
+        <th style="width:7%">Acciones</th>
       </tr></thead>
       <tbody id="inv-tbody"></tbody>
     </table>
@@ -534,7 +598,7 @@ function editInvItem(fbKey){
   document.getElementById('inv-modal-title').textContent='Editar gel';
   document.getElementById('im-nombre').value=p.nombre;
   document.getElementById('im-sabor').value=p.sabor;
-  document.getElementById('im-stock').value=p.stock;
+  document.getElementById('im-stock').value=p.stock_inicial!==undefined?p.stock_inicial:p.stock;
   document.getElementById('im-costo').value=p.costo;
   document.getElementById('im-envio').value=p.envio;
   document.getElementById('im-precio').value=p.precio;
@@ -546,7 +610,7 @@ function editInvItem(fbKey){
 function dupProd(fbKey){
   const p=productos().find(x=>x.fbKey===fbKey);
   if(!p) return;
-  const copia={id:Date.now(), nombre:p.nombre+' (copia)', sabor:p.sabor, stock:0, costo:p.costo, envio:p.envio, precio:p.precio, alerta:p.alerta, notas:p.notas};
+  const copia={id:Date.now(), nombre:p.nombre+' (copia)', sabor:p.sabor, stock:0, stock_inicial:0, costo:p.costo, envio:p.envio, precio:p.precio, alerta:p.alerta, notas:p.notas};
   fbSaveProd(copia).then(newKey => {
     editInvItem(newKey);
   });
@@ -555,10 +619,14 @@ function dupProd(fbKey){
 function saveInvItem(){
   const nombre=document.getElementById('im-nombre').value.trim();
   if(!nombre){ document.getElementById('im-nombre').focus(); return; }
+  const stockVal=Math.max(0,parseInt(document.getElementById('im-stock').value)||0);
+  const existente=editProdId?productos().find(x=>x.fbKey===editProdId):null;
   const data={
-    id: editProdId ? (productos().find(x=>x.fbKey===editProdId)||{}).id||Date.now() : Date.now(),
+    id: existente ? existente.id : Date.now(),
     nombre, sabor:document.getElementById('im-sabor').value.trim(),
-    stock:Math.max(0,parseInt(document.getElementById('im-stock').value)||0),
+    // Al editar: solo actualizar stock_inicial si cambió; el stock disponible se ajusta proporcionalmente
+    stock_inicial: stockVal,
+    stock: existente ? existente.stock+(stockVal-existente.stock_inicial) : stockVal,
     costo:parseFloat(document.getElementById('im-costo').value)||0,
     envio:parseFloat(document.getElementById('im-envio').value)||0,
     precio:parseFloat(document.getElementById('im-precio').value)||0,
