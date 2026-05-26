@@ -863,14 +863,16 @@ function renderLineas(){
 }
 
 function onLineaGelChange(uid){
+  saveLineasState();
   const sel=document.getElementById('lsel-'+uid);
   const prodId=parseInt(sel.value)||null;
   const l=lineasModal.find(x=>x.uid===uid);
-  if(l) l.prodId=prodId;
+  if(l){ l.prodId=prodId; if(prodId){ const p=getProd(prodId); if(p) l.precio=p.precio; } }
   const hint=document.getElementById('lhint-'+uid);
   if(hint) hint.textContent=prodId?getHint(prodId):'';
+  const pEl=document.getElementById('lprecio-'+uid);
   const p=getProd(prodId);
-  if(p&&!editVentaId){ const pEl=document.getElementById('lprecio-'+uid); if(pEl&&!pEl.value) pEl.value=p.precio; }
+  if(p&&pEl) pEl.value=p.precio;
   refreshTotalModal();
 }
 
